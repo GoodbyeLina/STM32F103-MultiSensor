@@ -11,11 +11,23 @@ struct {
 uint8_t BMP280_Init(I2C_HandleTypeDef *hi2c) {
     uint8_t id, params[24];
     HAL_I2C_Mem_Read(hi2c, BMP280_ADDR, 0xD0, 1, &id, 1, 100);
-    if (id != 0x58) return 1;
+		printf("BMP280 ID: 0x%02X\n", id); // 看看打印出来的是 0x60, 0x00 还是 0xFF
+//    if (id != 0x58) return 1;
 
     // 1. 读取补偿参数
     HAL_I2C_Mem_Read(hi2c, BMP280_ADDR, 0x88, 1, params, 24, 100);
-    calib.dig_T1 = (params[1]<<8)|params[0]; calib.dig_T2 = (params[3]<<8)|params[2]; // ...以此类推
+    calib.dig_T1 = (params[1]<<8)|params[0]; 
+		calib.dig_T2 = (params[3]<<8)|params[2]; // ...以此类推
+		calib.dig_T3 = (params[5]<<8)|params[4]; // ...以此类推
+		calib.dig_P1 = (params[7]<<8)|params[6]; // ...以此类推
+		calib.dig_P2 = (params[9]<<8)|params[8]; // ...以此类推
+		calib.dig_P3 = (params[11]<<8)|params[10]; // ...以此类推
+		calib.dig_P4 = (params[13]<<8)|params[12]; // ...以此类推
+		calib.dig_P5 = (params[15]<<8)|params[14]; // ...以此类推
+		calib.dig_P6 = (params[17]<<8)|params[16]; // ...以此类推
+		calib.dig_P7 = (params[19]<<8)|params[18]; // ...以此类推
+		calib.dig_P8 = (params[21]<<8)|params[20]; // ...以此类推
+		calib.dig_P9 = (params[23]<<8)|params[22]; // ...以此类推
     // (简略写法：实际需手动补全所有 P1-P9 的赋值)
 
     // 2. 配置传感器 (Ctrl_meas: 2倍过采样, 正常模式)

@@ -1,5 +1,6 @@
 #include "mpu6050.h"
 #include <math.h>
+#include <stdio.h>
 
 #define RAD_TO_DEG 57.295779513082320876798154814105
 
@@ -8,9 +9,17 @@
 #define DT 0.01f  // 假设 100Hz 的采样周期
 
 uint8_t MPU6050_Init(I2C_HandleTypeDef *hi2c) {
-    uint8_t check, data;
+		uint8_t check, data;
+    HAL_StatusTypeDef status;
 
-    HAL_I2C_Mem_Read(hi2c, MPU6050_ADDR, MPU6050_WHO_AM_I, 1, &check, 1, 100);
+    // 尝试读取 WHO_AM_I 寄存器
+    status = HAL_I2C_Mem_Read(hi2c, MPU6050_ADDR, MPU6050_WHO_AM_I, 1, &check, 1, 100);
+    
+    if (status != HAL_OK) {
+        // I2C 通讯本身失败（可能是接线松动或没加上拉电阻）
+        return 2; 
+    }
+		
     if (check == 0x68) {
         // 1. 唤醒传感器，内部 8MHz 时钟
         data = 0x00;
@@ -102,4 +111,25 @@ void MPU6050_Calibrate(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *DataStruct) {
     }
     DataStruct->Gyro_X_Offset = gx_sum / 100.0f;
     DataStruct->Gyro_Y_Offset = gy_sum / 100.0f;
+}
+
+/**
+ * @brief 根据选择模式打印数据
+ * @param DataStruct 指向数据的结构体
+ * @param Mode 模式选择：MPU6050_MODE_ACCEL 或 MPU6050_MODE_ANGLES
+ */
+void MPU6050_PrintData(MPU6050_Data_t *DataStruct, MPU6050_PrintMode_t Mode) {
+    if (Mode == MPU6050_MODE_ACCEL) {
+        // 打印原始加速度数据 (单位: g)
+        printf("Accel RAW -> X:%.2f g, Y:%.2f g, Z:%.2f g\r\n", 
+                DataStruct->Accel_X, 
+                DataStruct->Accel_Y, 
+                DataStruct->Accel_Z);
+    } 
+    else if (Mode == MPU6050_MODE_ANGLES) {
+        // 打印互补滤波后的姿态角 (单位: °)
+        printf("Attitude -> Pitch:%.2f°, Roll:%.2f°\r\n", 
+                DataStruct->Pitch, 
+                DataStruct->Roll);
+    }
 }

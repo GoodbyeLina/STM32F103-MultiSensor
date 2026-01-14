@@ -23,10 +23,18 @@ typedef struct {
 		float Gyro_X_Offset, Gyro_Y_Offset; // <--- 必须添加这两行
 } MPU6050_Data_t;
 
+// 定义输出模式枚举
+typedef enum {
+    MPU6050_MODE_ACCEL,  // 仅打印加速度 (X, Y, Z)
+    MPU6050_MODE_ANGLES  // 仅打印处理后的偏转角 (Pitch, Roll)
+} MPU6050_PrintMode_t;
+
 // 传入 I2C 句柄，增加驱动的复用性
 uint8_t MPU6050_Init(I2C_HandleTypeDef *hi2c);
 uint8_t MPU6050_Read_All(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *DataStruct);
 void MPU6050_Read_Filtered(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *DataStruct);
 void MPU6050_Calibrate(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *DataStruct);
+// 新增打印控制函数
+void MPU6050_PrintData(MPU6050_Data_t *DataStruct, MPU6050_PrintMode_t Mode);
 
 #endif

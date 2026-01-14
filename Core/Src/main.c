@@ -30,6 +30,7 @@
 #include "gps.h"
 #include "aht20.h"
 #include "bmp280.h"
+#include "lora.h"
 
 /* USER CODE END Includes */
 
@@ -54,10 +55,20 @@
 
 uint32_t timer_10ms = 0;      // 计时器变量
 MPU6050_Data_t myData = {0};   // 传感器数据结构体
+MPU6050_PrintMode_t currentMode = MPU6050_MODE_ANGLES; // 默认看角度
 
 AHT20_Data_t ahtData;
 BMP280_Data_t bmpData;
 uint32_t weather_timer = 0;
+
+uint8_t uart1_rx_byte[1];
+uint8_t uart2_rx_byte[1];
+uint8_t uart3_rx_byte[1];
+
+
+// 添加 LoRa 发送定时器
+uint32_t lora_tx_timer = 0;
+
 
 /* USER CODE END PV */
 
@@ -116,24 +127,41 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 	
-	// 开启 UART2 中断接收，每次接收 1 个字节
-//  GPS_Init();  
+	
+	// 初始化 MPU6050
+	HAL_Delay(500);
+	if(MPU6050_Init(&hi2c1) == 0){
+		printf("mpu6050 init success!\r\n");
+	} else {
+		printf("mpu6050 init failed!\r\n");	
+	}
+	
+	// 初始化 BMP280
+	if(BMP280_Init(&hi2c1) == 0){
+		printf("BMP280 init success!\r\n");
+	} else {
+		printf("BMP280 init failed!\r\n");
+	}
 
-  // 初始化 MPU6050
-//  if (MPU6050_Init(&hi2c1) == 0) {
-//      printf("MPU6050 Initialized Successfully!\r\n");
-//  } else {
-//      printf("MPU6050 Initialization Failed!\r\n");
-//  }
-  
-  // 初始化 AHT20
-  AHT20_Init(&hi2c1);
+	// 初始化 AHT20
+	if(AHT20_Init(&hi2c1) == 0){
+		printf("AHT20 init success!\r\n");
+	} else {
+		printf("AHT20 init failed!\r\n");
+	}
+	HAL_Delay(500);
 
-  // 初始化 BMP280
-  BMP280_Init(&hi2c1);
+	// 初始化 GPS 
+	GPS_Init();
 
+
+	uint32_t sensor_tick = 0;
+	uint32_t lora_send_tick = 0;
+	LoRa_Packet_t tx_packet; // 定义一个发送数据包实例
+	char * str = "aaaa";
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -144,37 +172,85 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-		/* 1. 处理 GPS 数据 (事件驱动) */
-//    GPS_Process(); // 专门处理 GPS 逻辑
+		/* 1. GPS 异步解析（必须实时调用） */
+//    GPS_Process();
+#if 1
 
-
-    /* 2. 定时读取传感器 (非阻塞方式，例如 50Hz 更新) */
-    // 2. 严格 10ms (100Hz) 读取一次传感器
-//    if (HAL_GetTick() - timer_10ms >= 10) {
-//        timer_10ms = HAL_GetTick();
-//        
-//        MPU6050_Read_Filtered(&hi2c1, &myData);
-//        
-//        // 每 100ms 打印一次，避免串口因发送太快而卡死
-//        static uint8_t print_cnt = 0;
-//        if (++print_cnt >= 10) {
-//            printf("P:%.1f R:%.1f\r\n", myData.Pitch, myData.Roll);
-//            HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-//            print_cnt = 0;
-//        }
-//    }
-
-    // 低频任务：环境监测（1s一次）
-    if (HAL_GetTick() - weather_timer >= 1000) {
-        weather_timer = HAL_GetTick();
+    /* 2. 定时任务：每 500ms 采集一次数据并打印 */
+    if (HAL_GetTick() - sensor_tick >= 20) 
+    {
+        sensor_tick = HAL_GetTick();
+        // --- 采集 MPU6050 ---
+        // 使用互补滤波模式获取平滑的角度
+        MPU6050_Read_All(&hi2c1, &myData);
+        // --- 采集 AHT20 ---
         AHT20_Read(&hi2c1, &ahtData);
-        BMP280_Read(&hi2c1, &bmpData);
-        
-        printf("Temp:%.1f Hum:%.1f Baro:%.0f Pa Alt:%.1f m\r\n", 
-                ahtData.Temperature, ahtData.Humidity, bmpData.Pressure, bmpData.Altitude);
-    }
+#if 1
 
-  }
+        // --- 串口打印输出 ---
+        printf("\r\n====== Sensor Data ======\r\n");
+        
+        // 打印环境温湿度 (来自 AHT20)
+        printf("[AHT20] Temp: %.1f C, Hum: %.1f%%\r\n", ahtData.Temperature, ahtData.Humidity);
+        
+        // 打印姿态角 (来自 MPU6050)
+        printf("[MPU6050] Pitch: %.2f, Roll: %.2f\r\n", myData.Pitch, myData.Roll);
+        
+			
+				//
+//			printf("GPS: %d, long: %f, lati: %f", g_gpsData.is_valid, g_gpsData.longitude, g_gpsData.latitude);
+			
+        // GPS 的打印已经在 GPS_Process() 内部通过 printf 实现了
+        printf("=========================\r\n");
+#endif 
+
+#if 1
+
+
+				printf("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\r\n", 
+										myData.Accel_X, 
+										myData.Accel_Y, 
+										myData.Accel_Z, 
+										myData.Gyro_X, 
+										myData.Gyro_Y, 
+										myData.Gyro_Z
+										);
+#endif 
+
+    }
+#endif
+		
+		/* --- LoRa 发送处理逻辑 --- */
+		// 每 3000ms (3秒) 通过 LoRa 发送一次全量数据
+
+		if (HAL_GetTick() - lora_send_tick >= 2000) {
+				lora_send_tick = HAL_GetTick();
+
+				// 1. 采集数据 (确保使用 Read_All 获取原始 XYZ)
+				AHT20_Read(&hi2c1, &ahtData);
+				MPU6050_Read_All(&hi2c1, &myData); // 确保读取了 Accel_X 等原始值
+
+				// 2. 填充结构体
+				tx_packet.temperature = ahtData.Temperature;
+				tx_packet.humidity = ahtData.Humidity;
+				tx_packet.acc_x = myData.Accel_X;
+				tx_packet.acc_y = myData.Accel_Y;
+				tx_packet.acc_z = myData.Accel_Z;
+				tx_packet.gyro_x = myData.Gyro_X;
+				tx_packet.gyro_y = myData.Gyro_Y;
+				tx_packet.gyro_z = myData.Gyro_Z;
+				tx_packet.latitude    = g_gpsData.latitude;
+				tx_packet.longitude   = g_gpsData.longitude;
+
+				// VOFA+ JustFloat 帧尾固定值
+				tx_packet.tail = 0x7F800000; 
+
+				// 发送整个结构体
+				LoRa_Send((uint8_t*)&tx_packet, sizeof(LoRa_Packet_t)); 
+
+				printf("[System] binary databag sended (%d bytes)\r\n", sizeof(LoRa_Packet_t));
+		}
+	}
   /* USER CODE END 3 */
 }
 
@@ -220,7 +296,14 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    GPS_Callback(huart); // 调用 gps.c 里的逻辑
+		if(huart->Instance == USART1){
+			HAL_UART_Transmit(&huart3, uart1_rx_byte, 1, 10);
+			HAL_UART_Receive_IT(&huart1, uart1_rx_byte, 1);
+		} else if (huart->Instance == USART3){
+			HAL_UART_Transmit(&huart1, uart3_rx_byte, 1, 10);
+			HAL_UART_Receive_IT(&huart3, uart3_rx_byte, 1);		
+		}
+	
 }
 /* USER CODE END 4 */
 
